@@ -39,54 +39,88 @@
         <button class="btn btn-primary w-100">Submit</button>
       </form>
 
-      <!-- Messages only shown after session starts -->
+      <!-- Messages shown after login -->
       <h4>🔐 Encrypted Messages</h4>
       <ul id="messageList" class="list-group"></ul>
     {% endif %}
   </div>
 
-  {% if current_user %}
-  <script>
-    fetch('/get_messages')
-      .then(res => res.json())
-      .then(data => {
-        const list = document.getElementById('messageList');
-        list.innerHTML = '';
+{% if current_user %}
+<script>
+fetch('/get_messages')
+  .then(res => res.json())
+  .then(data => {
+    const list = document.getElementById('messageList');
+    list.innerHTML = '';
 
-        data.forEach(msg => {
-          const item = document.createElement('li');
-          item.className = 'list-group-item';
+    data.forEach(msg => {
+      const item = document.createElement('li');
+      item.className = 'list-group-item';
 
-          let content = `
-            <b>From:</b> ${msg.submitted_by}<br>
-            <b>Time:</b> ${new Date(msg.timestamp).toLocaleString()}<br>
-          `;
+      let content = `
+        <b>From:</b> ${msg.submitted_by}<br>
+        <b>Time:</b> ${new Date(msg.timestamp).toLocaleString()}<br>
+      `;
 
-          if (msg.access_status === 'approved') {
-            content += `<b>Message:</b> ${msg.text}`;
-          } else if (msg.access_status === 'pending') {
-            content += `
-              <b>Message:</b> 🔐 <span class="text-warning">Request is being processed...</span>
-              <form method="POST" action="/cancel_request" class="mt-2">
-                <input type="hidden" name="message_id" value="${msg.id}">
-                <button class="btn btn-sm btn-danger">Cancel Request</button>
-              </form>
-            `;
-          } else {
-            content += `
-              <b>Message:</b> 🔐 <span class="text-muted">Encrypted</span><br>
-              <form action="/request_access" method="POST" class="mt-2">
-                <input type="hidden" name="message_id" value="${msg.id}">
-                <button class="btn btn-sm btn-warning">Request Access</button>
-              </form>
-            `;
-          }
+      const safeTimestamp = encodeURIComponent(msg.timestamp);
 
-          item.innerHTML = content;
-          list.appendChild(item);
-        });
-      });
-  </script>
-  {% endif %}
+      if (msg.access_status === 'approved' && msg.is_verified) {
+        content += `<b>Message:</b> ${msg.text}`;
+      } else if (msg.access_status === 'approved') {
+        content += `
+          <b>Message:</b> 🔐 <span class="text-warning">Enter Passcode</span>
+          <form onsubmit="verifyPasscode(event, '${safeTimestamp}', ${msg.id})">
+            <input type="text" name="passcode" class="form-control form-control-sm mb-2" placeholder="Enter Passcode" required>
+            <button class="btn btn-sm btn-success" type="submit">View</button>
+          </form>
+          <div class="text-danger mt-1" id="error-${msg.id}"></div>
+        `;
+      } else if (msg.access_status === 'pending') {
+        content += `<b>Message:</b> ⏳ Request pending...`;
+      } else if (msg.access_status === 'rejected') {
+        content += `<b>Message:</b> ❌ Access Denied`;
+      } else {
+        content += `
+          <form action="/request_access" method="POST" class="mt-2">
+            <input type="hidden" name="message_id" value="${msg.id}">
+            <button class="btn btn-sm btn-warning">Request Access</button>
+          </form>
+        `;
+      }
+
+      item.innerHTML = content;
+      list.appendChild(item);
+    });
+  });
+
+function verifyPasscode(event, timestamp, msgId) {
+  event.preventDefault();
+  const form = event.target;
+  const passcode = form.querySelector('input[name="passcode"]').value;
+
+  fetch('/verify_passcode_ajax', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ passcode: passcode, message_id: msgId })
+  })
+  .then(res => res.json())
+  .then(data => {
+    const msgBlock = form.closest('.list-group-item');
+    const errorBox = msgBlock.querySelector(`#error-${msgId}`);
+    
+    if (data.success) {
+      msgBlock.innerHTML = `
+        <b>From:</b> ${data.submitted_by}<br>
+        <b>Time:</b> ${new Date(data.timestamp).toLocaleString()}<br>
+        <b>Message:</b> ${data.message}
+      `;
+    } else {
+      errorBox.textContent = data.error || "Invalid passcode";
+    }
+  });
+}
+
+</script>
+{% endif %}
 </body>
 </html>
