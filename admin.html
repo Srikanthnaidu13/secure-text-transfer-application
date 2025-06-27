@@ -67,52 +67,104 @@
         });
       });
 
-    // Load and handle access requests
-    fetch('/admin/requests')
-      .then(res => res.json())
-      .then(data => {
-        const list = document.getElementById('requests');
-        list.innerHTML = '';
-        data.forEach(req => {
-          const item = document.createElement('li');
-          item.className = 'list-group-item';
-          item.dataset.requestId = req.id;
-          item.innerHTML = `
-            <div class="d-flex justify-content-between align-items-center">
-              <div>
-                <strong>${req.user_id}</strong> requested access to message <strong>#${req.message_id}</strong><br>
-                Status: <em>${req.status}</em>
-              </div>
-              <div>
-                <button class="btn btn-sm btn-success grant-btn me-1" data-id="${req.id}">Grant</button>
-                <button class="btn btn-sm btn-danger reject-btn" data-id="${req.id}">Reject</button>
-              </div>
+function loadRequests() {
+  fetch('/admin/requests')
+    .then(res => res.json())
+    .then(data => {
+      const list = document.getElementById('requests');
+      list.innerHTML = '';
+      data.forEach(req => {
+        const item = document.createElement('div');
+        item.className = 'card p-3 mb-3';
+        item.dataset.requestId = req.id;
+        item.innerHTML = `
+          <div class="d-flex justify-content-between align-items-center">
+            <div>
+              <b>${req.user_id}</b> requested access to message <b>#${req.message_id}</b><br>
+              Status: <span class="text-muted">${req.status}</span>
             </div>
-          `;
-          list.appendChild(item);
-        });
-
-        // Event listeners for Grant/Reject
-        document.querySelectorAll('.grant-btn').forEach(btn => {
-          btn.addEventListener('click', () => handleAction(btn.dataset.id, 'approved'));
-        });
-        document.querySelectorAll('.reject-btn').forEach(btn => {
-          btn.addEventListener('click', () => handleAction(btn.dataset.id, 'rejected'));
-        });
+            <div>
+              <button class="btn btn-sm btn-success grant-btn me-2">Grant</button>
+              <button class="btn btn-sm btn-danger reject-btn">Reject</button>
+            </div>
+          </div>
+        `;
+        list.appendChild(item);
       });
+      attachListeners();
+    })
+    .catch(console.error);
+}
 
-    function handleAction(requestId, action) {
-      fetch('/admin/grant_access', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `request_id=${requestId}&action=${action}`
-      }).then(res => {
-        if (res.ok) {
-          const item = document.querySelector(`[data-request-id="${requestId}"]`);
-          if (item) item.remove();
-        }
-      });
+function attachListeners() {
+  document.querySelectorAll('.grant-btn').forEach(btn => {
+    btn.onclick = () => {
+      const id = btn.closest('.card').dataset.requestId;
+      handleAction(id, 'approved');
+    };
+  });
+  document.querySelectorAll('.reject-btn').forEach(btn => {
+    btn.onclick = () => {
+      const id = btn.closest('.card').dataset.requestId;
+      handleAction(id, 'rejected');
+    };
+  });
+}
+
+function handleAction(requestId, action) {
+  fetch('/admin/grant_access', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `request_id=${requestId}&action=${action}`
+  })
+  .then(res => res.json())
+  .then(data => {
+    const card = document.querySelector(`[data-request-id="${requestId}"]`);
+    if (!card) return;
+
+    if (data.action === 'approved') {
+      card.innerHTML = `
+        <div class="text-success">
+          ✅ Access granted for <strong>${data.user_id}</strong> on message <strong>#${data.message_id}</strong><br>
+          🔑 <strong>Passcode:</strong> <code>${data.passcode}</code><br>
+          Share this with the user.
+        </div>
+      `;
+    } else {
+      card.remove();
     }
-  </script>
+  })
+  .catch(console.error);
+}
+
+window.onload = loadRequests;
+
+function handleAction(requestId, action) {
+  fetch('/admin/grant_access', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `request_id=${requestId}&action=${action}`
+  })
+  .then(res => res.json())
+  .then(data => {
+    const card = document.querySelector(`[data-request-id="${requestId}"]`);
+    if (!card) return;
+
+    if (data.action === 'approved') {
+      card.innerHTML = `
+        <div class="text-success">
+          ✅ Access granted to <b>${data.user_id}</b> for message <b>#${data.message_id}</b><br>
+          <b>Passcode:</b> <code>${data.passcode}</code>
+        </div>
+      `;
+    } else {
+      card.remove();
+    }
+  });
+}
+
+
+</script>
+
 </body>
-</html>
+</html>  
