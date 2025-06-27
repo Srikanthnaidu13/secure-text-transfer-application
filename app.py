@@ -3,7 +3,13 @@ from cryptography.fernet import Fernet
 import sqlite3
 from datetime import datetime
 import os
+import random
+import string
 
+app = Flask(__name__)
+app.secret_key = 'your_secret_key'
+
+# Generate or load encryption key
 def load_key():
     if not os.path.exists("secret.key"):
         key = Fernet.generate_key()
@@ -16,14 +22,8 @@ def load_key():
 
 key = load_key()
 cipher = Fernet(key)
-key = Fernet.generate_key()
 
-
-app = Flask(__name__)
-app.secret_key = 'your_secret_key'
-
-
-# Initialize the database
+# Initialize DB
 def init_db():
     conn = sqlite3.connect('messages.db')
     c = conn.cursor()
@@ -37,16 +37,15 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id TEXT,
         message_id INTEGER,
-        status TEXT DEFAULT 'pending'
+        status TEXT DEFAULT 'pending',
+        passcode TEXT
     )''')
     conn.commit()
     conn.close()
 
-@app.route('/', methods=['GET'])
+@app.route('/')
 def index():
-    # Clear session for fresh user experience
-    session.pop('current_user', None)
-    session.pop('submitted', None)
+    session.clear()
     return render_template('index.html', current_user=None, submitted=False)
 
 @app.route('/set_user', methods=['POST'])
@@ -87,41 +86,49 @@ def get_messages():
     c = conn.cursor()
     c.execute("SELECT * FROM messages")
     messages = c.fetchall()
-
     c.execute("SELECT user_id, message_id, status FROM access_requests")
-    access_data = c.fetchall()  # ✅ THIS must come before using access_data
-
+    access_data = c.fetchall()
     conn.close()
 
     access_map = {(user_id, msg_id): status for user_id, msg_id, status in access_data}
     current_user = session.get('current_user', 'guest')
     is_admin = 'admin' in session
-
     result = []
+
     for row in messages:
         msg_id, encrypted_text, submitted_by, timestamp = row
         access_status = access_map.get((current_user, msg_id))
+        verified_key = f'passcode_verified_{msg_id}'
+        is_verified = session.get(verified_key, False)
 
-        try:
-            if is_admin or access_status == 'approved':
+        if is_admin:
+            try:
                 text = cipher.decrypt(encrypted_text.encode()).decode()
-            elif access_status == 'pending':
-                text = "[Encrypted - Pending Approval]"
-            else:
-                text = "[Encrypted]"
-        except:
-            text = "[Unable to decrypt]"
+            except:
+                text = "[Unable to decrypt]"
+        elif access_status == 'approved' and is_verified:
+            try:
+                text = cipher.decrypt(encrypted_text.encode()).decode()
+            except:
+                text = "[Unable to decrypt]"
+        elif access_status == 'pending':
+            text = "[Encrypted - Pending Approval]"
+        elif access_status == 'rejected':
+            text = "[Access Denied by Admin]"
+        elif access_status == 'approved':
+            text = "[Encrypted - Requires Passcode Verification]"
+        else:
+            text = "[Encrypted]"
 
         result.append({
             'id': msg_id,
+            'text': text,
             'submitted_by': submitted_by,
             'timestamp': timestamp,
-            'text': text,
-            'access_status': access_status
+            'access_status': access_status,
+            'is_verified': is_verified
         })
-
     return jsonify(result)
-
 
 @app.route('/request_access', methods=['POST'])
 def request_access():
@@ -135,36 +142,45 @@ def request_access():
     conn.close()
     return redirect('/messages')
 
-@app.route('/cancel_request', methods=['POST'])
-def cancel_request():
-    user_id = session.get('current_user')
-    message_id = request.form['message_id']
-    if not user_id or not message_id:
-        return redirect('/messages')
+@app.route('/verify_passcode_ajax', methods=['POST'])
+def verify_passcode_ajax():
+    data = request.json
+    username = session.get('current_user')
+    entered_code = data.get('passcode')
+    msg_id = data.get('message_id')
 
     conn = sqlite3.connect('messages.db')
     c = conn.cursor()
-    c.execute("DELETE FROM access_requests WHERE user_id = ? AND message_id = ?", (user_id, message_id))
-    conn.commit()
-    conn.close()
-    return redirect('/messages')
-
-@app.route('/delete_message', methods=['POST'])
-def delete_message():
-    user = session.get('current_user')
-    message_id = request.form['message_id']
-
-    conn = sqlite3.connect('messages.db')
-    c = conn.cursor()
-    c.execute("SELECT submitted_by FROM messages WHERE id = ?", (message_id,))
+    c.execute("""
+        SELECT m.timestamp, m.submitted_by, m.text_encrypted, ar.passcode
+        FROM messages m
+        JOIN access_requests ar ON ar.message_id = m.id
+        WHERE ar.user_id = ? AND m.id = ? AND ar.status = 'approved'
+    """, (username, msg_id))
     row = c.fetchone()
-    if row and row[0] == user:
-        c.execute("DELETE FROM messages WHERE id = ?", (message_id,))
-        c.execute("DELETE FROM access_requests WHERE message_id = ?", (message_id,))
-        conn.commit()
     conn.close()
-    return '', 204
 
+    if row:
+        timestamp, submitted_by, encrypted_text, correct_passcode = row
+        if entered_code == correct_passcode:
+            decrypted = cipher.decrypt(encrypted_text.encode()).decode()
+            session[f'passcode_verified_{msg_id}'] = True
+            return jsonify({
+                'success': True,
+                'message': decrypted,
+                'submitted_by': submitted_by,
+                'timestamp': timestamp
+            })
+        else:
+            return jsonify({'success': False, 'error': 'Invalid passcode'})
+    else:
+        return jsonify({'success': False, 'error': 'Access not granted or message not found'})
+
+@app.route('/admin')
+def admin():
+    if 'admin' not in session:
+        return redirect('/login')
+    return render_template('admin.html')
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -173,12 +189,6 @@ def login():
             session['admin'] = True
             return redirect('/admin')
     return render_template('login.html')
-
-@app.route('/admin')
-def admin():
-    if 'admin' not in session:
-        return redirect('/login')
-    return render_template('admin.html')
 
 @app.route('/admin/requests')
 def view_requests():
@@ -194,6 +204,37 @@ def view_requests():
         for r in requests
     ])
 
+@app.route('/admin/grant_access', methods=['POST'])
+def grant_access():
+    if 'admin' not in session:
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    request_id = request.form['request_id']
+    action = request.form['action']
+
+    conn = sqlite3.connect('messages.db')
+    c = conn.cursor()
+    c.execute("SELECT user_id, message_id FROM access_requests WHERE id = ?", (request_id,))
+    row = c.fetchone()
+    if not row:
+        conn.close()
+        return jsonify({'error': 'Request not found'}), 404
+
+    user_id, message_id = row
+
+    if action == 'approved':
+        passcode = ''.join(random.choices(string.digits, k=6))
+        c.execute("UPDATE access_requests SET status = ?, passcode = ? WHERE id = ?",
+                  (action, passcode, request_id))
+        conn.commit()
+        conn.close()
+        return jsonify({'status': 'ok', 'action': action, 'user_id': user_id, 'message_id': message_id, 'passcode': passcode})
+    else:
+        c.execute("UPDATE access_requests SET status = ? WHERE id = ?", (action, request_id))
+        conn.commit()
+        conn.close()
+        return jsonify({'status': 'ok', 'action': action, 'user_id': user_id, 'message_id': message_id})
+
 @app.route('/admin/delete_message', methods=['POST'])
 def admin_delete_message():
     if 'admin' not in session:
@@ -206,31 +247,6 @@ def admin_delete_message():
     conn.commit()
     conn.close()
     return '', 204
-
-
-@app.route('/admin/grant_access', methods=['POST'])
-def grant_access():
-    if 'admin' not in session:
-        return redirect('/login')
-    request_id = request.form['request_id']
-    action = request.form['action']
-    conn = sqlite3.connect('messages.db')
-    c = conn.cursor()
-    c.execute("UPDATE access_requests SET status = ? WHERE id = ?", (action, request_id))
-    conn.commit()
-    conn.close()
-    return redirect('/admin')
-
-@app.route('/logout_user')
-def logout_user():
-    session.pop('current_user', None)
-    session.pop('submitted', None)
-    return redirect('/')
-
-@app.route('/logout_admin')
-def logout_admin():
-    session.pop('admin', None)
-    return redirect('/login')
 
 @app.route('/admin/get_messages')
 def get_admin_messages():
@@ -257,6 +273,18 @@ def get_admin_messages():
         })
     return jsonify(result)
 
+@app.route('/logout_user')
+def logout_user():
+    session.pop('current_user', None)
+    session.pop('submitted', None)
+    return redirect('/')
+
+@app.route('/logout_admin')
+def logout_admin():
+    session.pop('admin', None)
+    return redirect('/login')
+
 if __name__ == '__main__':
     init_db()
     app.run(debug=True)
+
