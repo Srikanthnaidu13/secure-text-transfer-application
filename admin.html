@@ -1,71 +1,293 @@
-<!-- templates/admin.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Admin Dashboard</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
   <style>
-    body { padding: 2rem; }
+    @media (max-width: 768px) {
+  .d-flex.justify-content-between {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
+  }
+
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .card.p-3.mb-3,
+  .list-group-item,
+  .card.card-block {
+    padding: 1rem !important;
+  }
+
+  h2, h4 {
+    font-size: 1.3rem;
+  }
+
+  .table th, .table td {
+    font-size: 12px;
+  }
+
+  .btn, .form-control {
+    font-size: 14px;
+  }
+
+  .sidebar {
+    display: none;
+  }
+}
+
+@media (max-width: 576px) {
+  body {
+    padding: 1rem !important;
+  }
+
+  .container {
+    padding: 0 !important;
+  }
+
+  .table-responsive {
+    overflow-x: auto;
+  }
+
+  .table th, .table td {
+    white-space: nowrap;
+  }
+}
+    body { padding: 2rem; background-color: #f8f9fa; }
     .fade-in { animation: fadeIn 0.6s ease-in-out; }
     @keyframes fadeIn {
       from { opacity: 0; transform: translateY(10px); }
       to { opacity: 1; transform: translateY(0); }
     }
+
+.list-group-item {
+  border: none;
+  border-bottom: 1px solid #eaeaea;
+  padding: 15px 20px;
+  transition: background 0.2s;
+}
+
+.list-group-item:hover {
+  background-color: #f8f9fa;
+}
+
+.card.p-3.mb-3 {
+  border: 1px solid #e4e6eb;
+  border-radius: 10px;
+  background-color: #fefefe;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+}
+
+.table {
+  background-color: #fff;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 3px 12px rgba(0,0,0,0.04);
+}
+
+.table th {
+  background-color: #0d6efd;
+  color: #fff;
+  font-size: 14px;
+}
+
+.table td {
+  font-size: 14px;
+}
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 2.5rem;
+}
+
+.dashboard-card {
+  background: linear-gradient(135deg, #e3f2fd, #ffffff);
+  border-radius: 16px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.05);
+  padding: 30px 25px;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  position: relative;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.dashboard-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+}
+
+.dashboard-card h5 {
+  margin: 0 0 10px;
+  font-size: 1.2rem;
+  color: #0d6efd;
+}
+
+.dashboard-card p {
+  font-size: 14px;
+  color: #6c757d;
+}
+
+.dashboard-icon {
+  font-size: 32px;
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  color: #0d6efd22;
+  transition: color 0.3s;
+}
+
   </style>
 </head>
 <body class="fade-in">
   <div class="container">
     <div class="d-flex justify-content-between align-items-center mb-4">
-      <h2 class="text-success">🛡️ Admin Panel</h2>
-      <a href="/logout_admin" class="btn btn-outline-danger">Logout</a>
-    </div>
+  <h2 class="text-success">🛡️ Admin Panel</h2>
+  <div class="sidebar">
+  <a href="#messages">📬 Messages</a>
+  <a href="#requests">🔐 Requests</a>
+  <a href="#files">📎 Files</a>
+  <a href="#users">👥 Users</a>
+</div>
 
-    <h4 class="mb-3">📬 All Decrypted Messages</h4>
-    <ul id="adminMessages" class="list-group mb-5"></ul>
-
-    <h4 class="mb-3">🔐 Access Requests</h4>
-    <ul id="requests" class="list-group"></ul>
+    <a href="/logout_admin" class="btn btn-outline-danger">Logout</a>
   </div>
+</div>
 
-  <script>
-    // Load decrypted messages
-    fetch('/admin/get_messages')
-      .then(res => res.json())
-      .then(data => {
-        const list = document.getElementById('adminMessages');
-        list.innerHTML = '';
-        data.forEach(msg => {
-          const item = document.createElement('li');
-          item.className = 'list-group-item d-flex justify-content-between align-items-start';
-          item.dataset.messageId = msg.id;
-          item.innerHTML = `
-            <div>
-              <b>User:</b> ${msg.submitted_by}<br>
-              <b>Time:</b> ${new Date(msg.timestamp).toLocaleString()}<br>
-              <b>Message:</b> ${msg.text}
-            </div>
-            <button class="btn btn-sm btn-outline-danger ms-3 delete-btn" data-id="${msg.id}">🗑️</button>
-          `;
-          list.appendChild(item);
-        });
+    <div id="messages">
+  <h4>📬 All Decrypted Messages</h4>
+  <ul id="adminMessages" class="list-group mb-4"></ul>
+</div>
 
-        document.querySelectorAll('.delete-btn').forEach(btn => {
-          btn.addEventListener('click', () => {
-            const messageId = btn.dataset.id;
-            fetch('/admin/delete_message', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-              body: `message_id=${messageId}`
-            }).then(res => {
-              if (res.ok) {
-                const li = document.querySelector(`[data-message-id="${messageId}"]`);
-                if (li) li.remove();
-              }
-            });
-          });
+<div id="requests">
+  <h4>🔐 Access Requests</h4>
+  <ul id="requests" class="list-group mb-4"></ul>
+</div>
+
+<div id="files">
+  <h4>📎 Uploaded Files</h4>
+  <ul id="fileList" class="list-group mb-4"></ul>
+</div>
+
+<div id="users">
+  <h4>👥 Users</h4>
+  <div class="table-responsive">
+  <table class="table table-bordered table-striped mb-4">
+    <thead>
+      <tr><th>Username</th><th>Messages</th><th>Requests</th></tr>
+    </thead>
+    <tbody id="userTable"></tbody>
+  </table>
+</div>
+
+<script>
+fetch('/admin/get_messages')
+  .then(res => res.json())
+  .then(data => {
+    const list = document.getElementById('adminMessages');
+    list.innerHTML = '';
+
+    data.forEach(msg => {
+      const item = document.createElement('li');
+      item.className = 'list-group-item';
+
+      const submittedBy = msg.submitted_by || "—";
+      const sentTo = msg.recipient || "—";
+      const timestamp = new Date(msg.timestamp).toLocaleString();
+      const visibility = msg.visibility;
+
+      const badge = visibility === 'private' 
+        ? `<span class="badge bg-danger ms-2">Private</span>` 
+        : `<span class="badge bg-success ms-2">Public</span>`;
+
+      const fileLink = msg.file_name 
+  ? `<br><b>File:</b> <a href="/uploads/${msg.file_name}" target="_blank" class="link-primary">${msg.file_name}</a>` 
+  : '';
+
+const deleteButton = msg.visibility === 'public'
+  ? `<div class="text-end mt-2">
+       <button class="btn btn-sm btn-outline-danger delete-btn" data-id="${msg.id}">🗑️ Delete</button>
+     </div>`
+  : ''; // hide delete for private
+
+const messageContent = msg.visibility === 'public'
+  ? `<b>Message:</b> <span class="text-dark">${msg.text}</span><br>`
+  : `<b>Sent to:</b> ${msg.recipient || 'Unknown'}<br>
+     <span class="text-muted">🔒 Message content is private and hidden.</span><br>`;
+
+item.innerHTML = `
+  <div class="card card-block p-3 mb-2">
+    <b>User:</b> ${msg.submitted_by} ${badge}<br>
+    <b>Time:</b> ${new Date(msg.timestamp).toLocaleString()}<br>
+    ${messageContent}
+    <b>Visibility:</b> <span class="${msg.visibility === 'private' ? 'text-danger' : 'text-success'}">${msg.visibility.toUpperCase()}</span>
+    ${fileLink}
+    ${deleteButton}
+  </div>
+`;
+
+
+      list.appendChild(item);
+    });
+
+    // Delete button handler
+    document.querySelectorAll('.delete-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const messageId = btn.dataset.id;
+        fetch('/admin/delete_message', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: `message_id=${messageId}`
+        }).then(res => {
+          if (res.ok) {
+            const li = btn.closest('li');
+            if (li) li.remove();
+          }
         });
       });
+    });
+  });
+
+
+  // Load files
+fetch('/admin/files').then(res => res.json()).then(data => {
+  const list = document.getElementById('fileList');
+  list.innerHTML = '';
+  data.forEach(f => {
+    const visibilityBadge = f.visibility === 'private'
+      ? `<span class="badge bg-secondary ms-2">Private</span>`
+      : `<span class="badge bg-success ms-2">Public</span>`;
+
+    const item = document.createElement('li');
+    item.className = 'list-group-item';
+    item.innerHTML = `
+      <b>${f.name}</b> by <i>${f.submitted_by}</i> ${visibilityBadge}<br>
+      <a href="/uploads/${f.name}" target="_blank">📎 View</a> | 
+      ${new Date(f.timestamp).toLocaleString()}
+    `;
+    list.appendChild(item);
+  });
+});
+
+
+// Load users
+fetch('/admin/users').then(res => res.json()).then(data => {
+  const table = document.getElementById('userTable');
+  table.innerHTML = '';
+  data.forEach(user => {
+    const row = document.createElement('tr');
+    row.innerHTML = `
+      <td>${user.username}</td>
+      <td>${user.messages}</td>
+      <td>${user.requests}</td>
+    `;
+    table.appendChild(row);
+  });
+});
 
 function loadRequests() {
   fetch('/admin/requests')
@@ -73,27 +295,46 @@ function loadRequests() {
     .then(data => {
       const list = document.getElementById('requests');
       list.innerHTML = '';
+
+      if (data.length === 0) {
+        list.innerHTML = '<div class="text-muted">No access requests found</div>';
+        return;
+      }
+
       data.forEach(req => {
         const item = document.createElement('div');
         item.className = 'card p-3 mb-3';
         item.dataset.requestId = req.id;
-        item.innerHTML = `
-          <div class="d-flex justify-content-between align-items-center">
-            <div>
-              <b>${req.user_id}</b> requested access to message <b>#${req.message_id}</b><br>
-              Status: <span class="text-muted">${req.status}</span>
+
+        const expires = req.expires_at ? new Date(req.expires_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+        const badge = req.is_public ? `<span class="badge bg-primary">Public</span>` : `<span class="badge bg-secondary">Private</span>`;
+
+        if (req.status === 'approved' && req.passcode && req.expires_at) {
+          item.innerHTML = `
+            <div class="text-success">
+              ✅ <b>${req.user_id}</b> was granted access to <b>${req.submitted_by}’s</b> message ${badge}:<br>
+              <blockquote class="mt-2 mb-2">"${req.message_text}"</blockquote>
+              <b>Passcode:</b> <code>${req.passcode}</code><br>
+              <span class="text-muted">⏳ Expires at: ${expires}</span>
             </div>
+          `;
+        } else {
+          item.innerHTML = `
             <div>
-              <button class="btn btn-sm btn-success grant-btn me-2">Grant</button>
-              <button class="btn btn-sm btn-danger reject-btn">Reject</button>
+              <b>${req.user_id}</b> requested access to <b>${req.submitted_by}’s</b> message ${badge}:<br>
+              <blockquote class="mt-2 mb-2">"${req.message_text}"</blockquote>
+              <span class="text-muted">Status: ${req.status}</span><br>
+              <button class="btn btn-sm btn-success mt-2 grant-btn">Grant</button>
+              <button class="btn btn-sm btn-danger mt-2 reject-btn">Reject</button>
             </div>
-          </div>
-        `;
+          `;
+        }
+
         list.appendChild(item);
       });
+
       attachListeners();
-    })
-    .catch(console.error);
+    });
 }
 
 function attachListeners() {
@@ -103,6 +344,7 @@ function attachListeners() {
       handleAction(id, 'approved');
     };
   });
+
   document.querySelectorAll('.reject-btn').forEach(btn => {
     btn.onclick = () => {
       const id = btn.closest('.card').dataset.requestId;
@@ -123,38 +365,14 @@ function handleAction(requestId, action) {
     if (!card) return;
 
     if (data.action === 'approved') {
-      card.innerHTML = `
-        <div class="text-success">
-          ✅ Access granted for <strong>${data.user_id}</strong> on message <strong>#${data.message_id}</strong><br>
-          🔑 <strong>Passcode:</strong> <code>${data.passcode}</code><br>
-          Share this with the user.
-        </div>
-      `;
-    } else {
-      card.remove();
-    }
-  })
-  .catch(console.error);
-}
+      const expires = new Date(data.expires_at);
+      const endTime = expires.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-window.onload = loadRequests;
-
-function handleAction(requestId, action) {
-  fetch('/admin/grant_access', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: `request_id=${requestId}&action=${action}`
-  })
-  .then(res => res.json())
-  .then(data => {
-    const card = document.querySelector(`[data-request-id="${requestId}"]`);
-    if (!card) return;
-
-    if (data.action === 'approved') {
       card.innerHTML = `
         <div class="text-success">
           ✅ Access granted to <b>${data.user_id}</b> for message <b>#${data.message_id}</b><br>
-          <b>Passcode:</b> <code>${data.passcode}</code>
+          <b>Passcode:</b> <code>${data.passcode}</code><br>
+          <span class="text-muted">⏳ Expires at: ${endTime}</span>
         </div>
       `;
     } else {
@@ -164,7 +382,8 @@ function handleAction(requestId, action) {
 }
 
 
+window.onload = loadRequests;
 </script>
-
 </body>
-</html>  
+</html>
+
