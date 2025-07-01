@@ -2,9 +2,53 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Secure Text Submission</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <style>
+    @media (max-width: 768px) {
+  body {
+    padding: 1rem !important;
+  }
+  .form-control, .form-select, .btn {
+    font-size: 14px;
+  }
+  .btn {
+    padding: 8px 12px;
+  }
+  .card {
+    padding: 1rem !important;
+  }
+  h2, h5 {
+    font-size: 1.25rem;
+  }
+  #messageList .list-group-item {
+    font-size: 14px;
+  }
+}
+
+@media (max-width: 576px) {
+  .d-flex.justify-content-between {
+    flex-direction: column;
+    align-items: flex-start !important;
+  }
+  .d-flex.justify-content-between .btn {
+    margin-top: 10px;
+  }
+}
+
+    body {
+      background-color: #f8f9fa;
+    }
+    .fade-in {
+      animation: fadeIn 0.6s ease-in-out;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
 </head>
 <body class="p-5">
   <div class="container fade-in">
@@ -19,38 +63,117 @@
         {% if current_user %}
           <a href="/logout_user" class="btn btn-outline-secondary me-2">Logout</a>
         {% endif %}
-        <a href="/login" class="btn btn-outline-primary">Admin Login</a>
       </div>
     </div>
 
     {% if not current_user %}
-      <!-- Only show before login -->
-      <form method="POST" action="/set_user" class="card p-4 mb-4">
-        <input type="text" name="username" class="form-control mb-2" placeholder="Enter your name" required>
-        <button class="btn btn-primary">Start Session</button>
-      </form>
+
+  {% if session.get('login_error') %}
+  <div class="alert alert-danger text-center mb-3">
+    {{ session.pop('login_error') }}
+  </div>
+{% endif %}
+
+  {% if not show_forgot %}
+    <form method="POST" action="/set_user" class="card p-4 mb-4 shadow-lg" style="max-width: 400px; margin: auto;">
+  <h5 class="mb-3 text-center">🔐 Login</h5>
+
+  {% if session.get('login_error') %}
+    <div class="alert alert-danger text-center mb-3">
+      {{ session.pop('login_error') }}
+    </div>
+  {% endif %}
+
+  <div class="mb-3">
+    <label for="username" class="form-label">Username</label>
+    <input type="text" name="username" class="form-control" required>
+  </div>
+  <div class="mb-3">
+    <label for="password" class="form-label">Password</label>
+    <input type="password" name="password" class="form-control" required>
+  </div>
+  <div class="d-flex justify-content-between">
+    <a href="/forgot" class="text-muted small">Forgot password?</a>
+    <button type="submit" class="btn btn-primary">Login</button>
+  </div>
+</form>
+
+
+  {% endif %}
+
+  {% if show_forgot %}
+    <!-- ✅ FORGOT PASSWORD FORM -->
+    <form class="card p-4 shadow-lg" style="max-width: 400px; margin:auto;">
+      <h5 class="text-primary text-center mb-3">🔑 Forgot Password</h5>
+      <p class="text-muted small text-center mb-3">Enter your username or email to receive a reset link.</p>
+      <div class="mb-3">
+        <label for="forgotInput" class="form-label">Username or Email</label>
+        <input type="text" id="forgotInput" class="form-control" placeholder="e.g. john or john@example.com" required>
+      </div>
+      <button type="submit" class="btn btn-primary w-100">📩 Send Link</button>
+      <div class="text-center mt-3">
+        <a href="/" class="text-muted small">← Back to Login</a>
+      </div>
+    </form>
+
+{% endif %}
+
     {% else %}
-      <!-- After login -->
       {% if submitted %}
         <div class="alert alert-success">✅ Your message was successfully submitted!</div>
       {% endif %}
-      <form action="/submit" method="POST" class="card p-4 mb-4">
-        <textarea name="text" class="form-control mb-2" rows="4" placeholder="Enter your message" required></textarea>
-        <button class="btn btn-primary w-100">Submit</button>
-      </form>
+<form action="/submit" method="POST" enctype="multipart/form-data" class="card p-4 mb-4">
+      <div class="mb-3">
+    <label for="messageText" class="form-label">Your Message</label>
+    <textarea name="text" id="messageText" class="form-control" rows="4" required placeholder="Type your message..."></textarea>
+  </div>
 
-      <!-- Messages shown after login -->
+  <div class="mb-3">
+    <label for="file" class="form-label">Attach File (Optional)</label>
+    <input type="file" name="file" class="form-control" id="file">
+  </div>
+<div class="mb-3">
+  <label for="visibility" class="form-label">Visibility</label>
+  <select name="visibility" id="visibility" class="form-select" onchange="toggleRecipient()">
+    <option value="public" selected>🌐 Public</option>
+    <option value="private">🔒 Private</option>
+  </select>
+</div>
+
+<div class="mb-3" id="recipientBlock" style="display: none;">
+  <label for="recipient" class="form-label">Select User</label>
+  <select name="recipient" id="recipient" class="form-select">
+    <option value="">-- Choose a user --</option>
+    {% for user in user_list %}
+      {% if user != current_user %}
+        <option value="{{ user }}">{{ user }}</option>
+      {% endif %}
+    {% endfor %}
+  </select>
+</div>
+
+  <button type="submit" class="btn btn-primary w-100">Submit Message</button>
+</form>
+
       <h4>🔐 Encrypted Messages</h4>
       <ul id="messageList" class="list-group"></ul>
     {% endif %}
   </div>
 
 {% if current_user %}
+{% raw %}
 <script>
-fetch('/get_messages')
+document.addEventListener("DOMContentLoaded", function () {
+  const list = document.getElementById("messageList");
+  const recipientSelect = document.getElementById("recipient");
+  const visibilityBlock = document.getElementById("visibilityBlock");
+  const loginForm = document.getElementById("loginForm");
+  const errorBox = document.getElementById("loginError");
+
+  // Load messages
+  fetch('/get_messages')
   .then(res => res.json())
   .then(data => {
-    const list = document.getElementById('messageList');
     list.innerHTML = '';
 
     data.forEach(msg => {
@@ -62,30 +185,48 @@ fetch('/get_messages')
         <b>Time:</b> ${new Date(msg.timestamp).toLocaleString()}<br>
       `;
 
-      const safeTimestamp = encodeURIComponent(msg.timestamp);
-
       if (msg.access_status === 'approved' && msg.is_verified) {
         content += `<b>Message:</b> ${msg.text}`;
-      } else if (msg.access_status === 'approved') {
+      }
+
+      // ✅ Direct private message: no passcode or password
+      else if (msg.access_status === 'approved' && msg.is_direct) {
+            content += `
+              <div id="direct-msg-${msg.id}">
+                <b>From:</b> ${msg.submitted_by}<br>
+                <b>Time:</b> ${new Date(msg.timestamp).toLocaleString()}<br>
+                <b>Status:</b> 🔒 Direct Private Message<br>
+                <button class="btn btn-sm btn-outline-primary mt-2" onclick="revealDirectMessage(${msg.id})">👁️ View</button>
+              </div>
+            `;
+          }
+
+      else if (msg.access_status === 'approved') {
         content += `
-          <b>Message:</b> 🔐 <span class="text-warning">Enter Passcode</span>
-          <form onsubmit="verifyPasscode(event, '${safeTimestamp}', ${msg.id})">
-            <input type="text" name="passcode" class="form-control form-control-sm mb-2" placeholder="Enter Passcode" required>
-            <button class="btn btn-sm btn-success" type="submit">View</button>
+          <b>Status:</b> ✅ Access Granted<br>
+          <b>Message:</b> 🔐 <span class="text-warning">Verify password to reveal passcode</span>
+          <form onsubmit="verifyUserPassword(event, ${msg.id})" class="mt-2">
+            <input type="password" name="password" class="form-control form-control-sm mb-2" placeholder="Enter your password" required>
+            <button class="btn btn-sm btn-primary">🔍 Reveal Passcode</button>
           </form>
-          <div class="text-danger mt-1" id="error-${msg.id}"></div>
+          <div class="text-danger mt-1" id="auth-error-${msg.id}"></div>
+          <div class="text-success mt-1" id="reveal-passcode-${msg.id}" style="display: none;"></div>
         `;
       } else if (msg.access_status === 'pending') {
         content += `<b>Message:</b> ⏳ Request pending...`;
       } else if (msg.access_status === 'rejected') {
         content += `<b>Message:</b> ❌ Access Denied`;
       } else {
-        content += `
-          <form action="/request_access" method="POST" class="mt-2">
-            <input type="hidden" name="message_id" value="${msg.id}">
-            <button class="btn btn-sm btn-warning">Request Access</button>
-          </form>
-        `;
+        if (msg.visibility === 'public' && !msg.access_status) {
+          content += `
+            <form action="/request_access" method="POST" class="mt-2">
+              <input type="hidden" name="message_id" value="${msg.id}">
+              <button class="btn btn-sm btn-warning" type="submit">Request Access</button>
+            </form>
+          `;
+        } else if (msg.visibility === 'private' && msg.submitted_by === "{{ current_user }}") {
+          content += `<b>Message:</b> 🔒 This is your private message.`;
+        }
       }
 
       item.innerHTML = content;
@@ -93,7 +234,96 @@ fetch('/get_messages')
     });
   });
 
-function verifyPasscode(event, timestamp, msgId) {
+function revealDirectMessage(msgId) {
+  fetch(`/reveal_direct_message/${msgId}`)
+    .then(res => res.json())
+    .then(data => {
+      const container = document.getElementById(`direct-msg-${msgId}`);
+      if (data.success) {
+        container.innerHTML = `
+          <b>From:</b> ${data.submitted_by}<br>
+          <b>Time:</b> ${new Date(data.timestamp).toLocaleString()}<br>
+          <b>Message:</b> ${data.message}
+        `;
+      } else {
+        container.innerHTML = `<div class="text-danger">❌ ${data.error}</div>`;
+      }
+    })
+    .catch(() => {
+      document.getElementById(`direct-msg-${msgId}`).innerHTML = `<div class="text-danger">❌ Failed to load message</div>`;
+    });
+}
+
+  // Toggle visibility block when a recipient is selected
+  if (recipientSelect && visibilityBlock) {
+    recipientSelect.addEventListener('change', function () {
+      visibilityBlock.style.display = this.value ? 'none' : 'block';
+    });
+  }
+
+  // Login form AJAX handler
+  if (loginForm) {
+    loginForm.addEventListener("submit", function (e) {
+      e.preventDefault();
+
+      const formData = new FormData(loginForm);
+
+      fetch("/ajax_login", {
+        method: "POST",
+        body: formData
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          window.location.href = data.redirect_url;
+        } else {
+          errorBox.textContent = data.message || "Invalid credentials";
+          errorBox.classList.remove("d-none");
+        }
+      })
+      .catch(() => {
+        errorBox.textContent = "Login failed. Please try again.";
+        errorBox.classList.remove("d-none");
+      });
+    });
+  }
+});
+
+// Reveal passcode after verifying user password
+function verifyUserPassword(event, msgId) {
+  event.preventDefault();
+  const form = event.target;
+  const password = form.querySelector('input[name="password"]').value;
+
+  fetch('/reveal_passcode', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message_id: msgId, password })
+  })
+  .then(res => res.json())
+  .then(data => {
+    const errorBox = document.getElementById(`auth-error-${msgId}`);
+    const passcodeBox = document.getElementById(`reveal-passcode-${msgId}`);
+    if (data.success) {
+      errorBox.textContent = '';
+      passcodeBox.style.display = 'block';
+      passcodeBox.innerHTML = `
+        <b>Passcode:</b> <code>${data.passcode}</code><br>
+        <form onsubmit="verifyPasscode(event, ${msgId})" class="mt-2">
+          <input type="text" name="passcode" class="form-control form-control-sm mb-2" placeholder="Enter passcode">
+          <button class="btn btn-sm btn-success">✅ View Message</button>
+        </form>
+        <div class="text-danger mt-1" id="error-${msgId}"></div>
+      `;
+    } else {
+      passcodeBox.style.display = 'none';
+      errorBox.textContent = data.error || 'Wrong password';
+    }
+  });
+}
+
+// Verify the passcode itself
+function verifyPasscode(event, msgId) {
   event.preventDefault();
   const form = event.target;
   const passcode = form.querySelector('input[name="passcode"]').value;
@@ -101,13 +331,13 @@ function verifyPasscode(event, timestamp, msgId) {
   fetch('/verify_passcode_ajax', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ passcode: passcode, message_id: msgId })
+    body: JSON.stringify({ passcode, message_id: msgId })
   })
   .then(res => res.json())
   .then(data => {
     const msgBlock = form.closest('.list-group-item');
     const errorBox = msgBlock.querySelector(`#error-${msgId}`);
-    
+
     if (data.success) {
       msgBlock.innerHTML = `
         <b>From:</b> ${data.submitted_by}<br>
@@ -115,12 +345,33 @@ function verifyPasscode(event, timestamp, msgId) {
         <b>Message:</b> ${data.message}
       `;
     } else {
-      errorBox.textContent = data.error || "Invalid passcode";
+      errorBox.textContent = data.error || "Invalid passcode.";
     }
   });
 }
+document.addEventListener("DOMContentLoaded", function () {
+  const visibilitySelect = document.getElementById("visibility");
+  const recipientBlock = document.getElementById("recipientBlock");
 
+  if (visibilitySelect && recipientBlock) {
+    visibilitySelect.addEventListener("change", function () {
+      if (this.value === "private") {
+        recipientBlock.style.display = "block";
+      } else {
+        recipientBlock.style.display = "none";
+        document.getElementById("recipient").value = "";
+      }
+    });
+
+    // Trigger visibility on page load in case user refreshes with private selected
+    if (visibilitySelect.value === "private") {
+      recipientBlock.style.display = "block";
+    }
+  }
+});
 </script>
+{% endraw %}
 {% endif %}
+
 </body>
 </html>
