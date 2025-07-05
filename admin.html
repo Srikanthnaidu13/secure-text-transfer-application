@@ -208,11 +208,11 @@ fetch('/admin/get_messages')
   ? `<br><b>File:</b> <a href="/uploads/${msg.file_name}" target="_blank" class="link-primary">${msg.file_name}</a>` 
   : '';
 
-const deleteButton = msg.visibility === 'public'
-  ? `<div class="text-end mt-2">
-       <button class="btn btn-sm btn-outline-danger delete-btn" data-id="${msg.id}">🗑️ Delete</button>
-     </div>`
-  : ''; // hide delete for private
+const deleteButton = `
+  <div class="text-end mt-2">
+    <button class="btn btn-sm btn-outline-danger delete-btn" data-id="${msg.id}">🗑️ Delete</button>
+  </div>
+`;
 
 const messageContent = msg.visibility === 'public'
   ? `<b>Message:</b> <span class="text-dark">${msg.text}</span><br>`
