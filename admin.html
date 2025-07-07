@@ -140,49 +140,76 @@
   color: #0d6efd22;
   transition: color 0.3s;
 }
+    .card {
+      border-radius: 12px;
+    }
+    .btn-group .btn {
+      border-radius: 20px;
+      font-weight: bold;
+    }
+    .btn-group .btn:hover {
+      background-color: #e3f2fd;
+    }
+
 
   </style>
 </head>
 <body class="fade-in">
   <div class="container">
     <div class="d-flex justify-content-between align-items-center mb-4">
-  <h2 class="text-success">🛡️ Admin Panel</h2>
-  <div class="sidebar">
-  <a href="#messages">📬 Messages</a>
-  <a href="#requests">🔐 Requests</a>
-  <a href="#files">📎 Files</a>
-  <a href="#users">👥 Users</a>
-</div>
+      <h2 class="text-success">🛡️ Admin Panel</h2>
 
-    <a href="/logout_admin" class="btn btn-outline-danger">Logout</a>
-  </div>
-</div>
+      <!-- 🌟 Sidebar (unchanged for fetch calls to work) -->
+      <div class="btn-group" role="group" aria-label="Admin Sections">
+        <a class="btn btn-outline-primary fw-bold" href="#messages">📬 Messages</a>
+        <a class="btn btn-outline-primary fw-bold" href="#requests">🔐 Requests</a>
+        <a class="btn btn-outline-primary fw-bold" href="#files">📎 Files</a>
+        <a class="btn btn-outline-primary fw-bold" href="#users">👥 Users</a>
+      </div>
 
+      <a href="/logout_admin" class="btn btn-outline-danger">Logout</a>
+    </div>
+
+    <!-- 📝 Sections -->
     <div id="messages">
-  <h4>📬 All Decrypted Messages</h4>
-  <ul id="adminMessages" class="list-group mb-4"></ul>
-</div>
+      <h4 class="text-primary">📬 All Decrypted Messages</h4>
+      <div class="card shadow-sm mb-3 p-3">
+        <ul id="adminMessages" class="list-group"></ul>
+      </div>
+    </div>
 
-<div id="requests">
-  <h4>🔐 Access Requests</h4>
-  <ul id="requests" class="list-group mb-4"></ul>
-</div>
+    <div id="requests" class="mt-4">
+      <h4 class="text-primary">🔐 Access Requests</h4>
+      <div class="card shadow-sm mb-3 p-3">
+        <ul id="requestsList" class="list-group"></ul>
+      </div>
+    </div>
 
-<div id="files">
-  <h4>📎 Uploaded Files</h4>
-  <ul id="fileList" class="list-group mb-4"></ul>
-</div>
+    <div id="files" class="mt-4">
+      <h4 class="text-primary">📎 Uploaded Files</h4>
+      <div class="card shadow-sm mb-3 p-3">
+        <ul id="fileList" class="list-group"></ul>
+      </div>
+    </div>
 
-<div id="users">
-  <h4>👥 Users</h4>
-  <div class="table-responsive">
-  <table class="table table-bordered table-striped mb-4">
-    <thead>
-      <tr><th>Username</th><th>Messages</th><th>Requests</th></tr>
-    </thead>
-    <tbody id="userTable"></tbody>
-  </table>
-</div>
+    <div id="users" class="mt-4">
+      <h4 class="text-primary">👥 Users</h4>
+      <div class="card shadow-sm p-3">
+        <div class="table-responsive">
+          <table class="table table-bordered table-hover">
+            <thead class="table-light">
+              <tr>
+                <th>Username</th>
+                <th>Messages</th>
+                <th>Requests</th>
+              </tr>
+            </thead>
+            <tbody id="userTable"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
 
 <script>
 fetch('/admin/get_messages')
@@ -217,7 +244,9 @@ const deleteButton = `
 const messageContent = msg.visibility === 'public'
   ? `<b>Message:</b> <span class="text-dark">${msg.text}</span><br>`
   : `<b>Sent to:</b> ${msg.recipient || 'Unknown'}<br>
-     <span class="text-muted">🔒 Message content is private and hidden.</span><br>`;
+     <div class="alert alert-warning fw-bold text-center mt-2" style="font-size: 1rem;">
+       🔒 Message content is <span class="text-danger">private</span> and <span class="text-danger">hidden</span>.
+     </div>`;
 
 item.innerHTML = `
   <div class="card card-block p-3 mb-2">
@@ -386,4 +415,3 @@ window.onload = loadRequests;
 </script>
 </body>
 </html>
-
