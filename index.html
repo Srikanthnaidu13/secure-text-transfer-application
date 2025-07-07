@@ -188,7 +188,7 @@ document.addEventListener("DOMContentLoaded", function () {
   const loginForm = document.getElementById("loginForm");
   const errorBox = document.getElementById("loginError");
 
-  fetch('/get_messages')
+fetch('/get_messages')
   .then(res => res.json())
   .then(data => {
     list.innerHTML = ''; // Clear existing messages
@@ -196,39 +196,42 @@ document.addEventListener("DOMContentLoaded", function () {
     data.forEach(msg => {
       const item = document.createElement('li');
       item.className = 'list-group-item';
-      item.setAttribute('data-id', msg.id); // Add data-id for targeting later
+      item.setAttribute('data-id', msg.id); // For targeting later
 
       let content = "";
 
       // 🏷️ Badge for visibility
       let badge = "";
       const currentUser = "{{ current_user }}".trim();
-      const recipients = msg.recipient ? msg.recipient.split(",").map(r => r.trim()) : [];
+      const recipients = msg.recipients ? msg.recipients.split(",").map(r => r.trim()) : [];
 
-      if (msg.visibility === "public") {
-        badge = `<span class="badge bg-success ms-2">🌐 Public</span>`;
-      } else if (
-        msg.visibility === "private" &&
-        (msg.submitted_by === currentUser || recipients.includes(currentUser))
-      ) {
+      if (msg.visibility === "private") {
         badge = `<span class="badge bg-danger ms-2">🔒 Private</span>`;
+      } else if (msg.visibility === "public") {
+        badge = `<span class="badge bg-success ms-2">🌐 Public</span>`;
       }
 
-      // 🔥 Direct private messages (sender/recipient only)
-      if (msg.access_status === 'approved' && msg.is_direct === 1) {
-        content += `
-          <b>From:</b> ${msg.submitted_by} ${badge}<br>
-          <b>Time:</b> ${new Date(msg.timestamp).toLocaleString()}<br>
-          <b>Message:</b> ${msg.text}<br>
-        `;
-      } else {
+      // ✅ Private direct messages (show View button)
+if (msg.is_direct_private) {
+  content += `
+    <b>From:</b> ${msg.submitted_by} ${badge}<br>
+    <b>Time:</b> ${new Date(msg.timestamp).toLocaleString()}<br>
+    <b>Sent To:</b> ${msg.recipients}<br>
+    <b>Status: 🔒 This is a private message</b><br>
+    <div class="alert alert-info mt-2"><b>Message:</b> ${msg.text}</div>
+    </div>
+  `;
+}
+
+      // 🌐 All Other Cases (unchanged)
+      else {
         content += `
           <b>From:</b> ${msg.submitted_by} ${badge}<br>
           <b>Time:</b> ${new Date(msg.timestamp).toLocaleString()}<br>
         `;
 
         if (msg.access_status === 'approved' && msg.is_verified) {
-          content += `<b>Message:</b> ${msg.text}`;
+          content += `<b>Message:</b> <span class="text-dark">${msg.text}</span>`;
         } else if (msg.access_status === 'approved') {
           content += `
             <b>Status:</b> ✅ Access Granted<br>
@@ -258,40 +261,19 @@ document.addEventListener("DOMContentLoaded", function () {
         }
       }
 
-      // ✅ Add Remove button to delete from user list
-      content += `
-        <div class="text-end mt-2">
-          <button class="btn btn-sm btn-outline-danger" onclick="hideRequest(${msg.id})">Remove</button>
-        </div>
-      `;
+     content += `
+    <div class="text-end mt-2">
+      <button class="btn btn-sm btn-outline-danger" onclick="hideRequest(${msg.id})">🗑️ Remove</button>
+    </div>
+  `;
+
 
       item.innerHTML = content;
       list.appendChild(item);
     });
   });
 
-  function hideRequest(messageId) {
-  fetch('/hide_request', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message_id: messageId })
-  })
-  .then(res => res.json())
-  .then(data => {
-    if (data.success) {
-      // Remove the message from DOM
-      const messageItem = document.querySelector(`li[data-id="${messageId}"]`);
-      if (messageItem) {
-        messageItem.remove();
-      }
-    } else {
-      alert("❌ Failed to remove the request.");
-    }
-  })
-  .catch(() => {
-    alert("❌ Error while removing the request.");
-  });
-}
+
 
 // Attach event listener for all remove buttons
 document.querySelectorAll('.remove-btn').forEach(btn => {
@@ -300,27 +282,20 @@ document.querySelectorAll('.remove-btn').forEach(btn => {
     hideRequest(messageId);
   });
 });
-
-function removeFromUserList(messageId) {
-  fetch('/remove_from_user_list', {
+function hideRequest(msgId) {
+  fetch('/remove_request', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message_id: messageId })
+    body: JSON.stringify({ message_id: msgId })
   })
   .then(res => res.json())
   .then(data => {
     if (data.success) {
-      // Remove the message from the DOM
-      const messageItem = document.querySelector(`li[data-id="${messageId}"]`);
-      if (messageItem) {
-        messageItem.remove();
-      }
+      const item = document.querySelector(`li[data-id='${msgId}']`);
+      if (item) item.remove(); // Remove from UI immediately
     } else {
-      alert("❌ Could not remove this message.");
+      alert("❌ Failed to remove request.");
     }
-  })
-  .catch(() => {
-    alert("❌ Error removing message.");
   });
 }
 
