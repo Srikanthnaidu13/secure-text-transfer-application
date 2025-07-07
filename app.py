@@ -2,16 +2,25 @@ from flask import Flask, render_template, request, redirect, session, jsonify
 from cryptography.fernet import Fernet
 import sqlite3
 from datetime import datetime
-import os
 import random
 import string
 from datetime import datetime, timedelta
 from flask import send_from_directory
-import os
 from flask import Flask
+from flask import Flask, render_template
+import os
+from flask import Flask, render_template
 
-app = Flask(__name__) 
+app = Flask(__name__)
+
+@app.route('/')
+def index():
+    return render_template('index.html')  # This will look for templates/index.html
+
+
+app = Flask(__name__, template_folder="templates", static_folder="static")
 app.secret_key = 'your_secret_key'
+
 
 
 # Generate or load encryption key
@@ -75,6 +84,7 @@ def init_db():
         c.execute("ALTER TABLE access_requests ADD COLUMN expires_at TEXT")
     if 'user_hidden' not in access_columns:
         c.execute("ALTER TABLE access_requests ADD COLUMN user_hidden INTEGER DEFAULT 0")
+        
 
     # ✅ Add missing columns to messages
     c.execute("PRAGMA table_info(messages)")
@@ -91,10 +101,10 @@ def init_db():
     conn.commit()
     conn.close()
 
-@app.route('/')
+@app.route("/")
 def index():
-    session.clear()
-    return render_template('index.html', current_user=None, submitted=False)
+    return render_template("index.html")
+
 
 from flask import request
 
@@ -457,7 +467,6 @@ def admin_delete_message():
     # ✅ Return success JSON
     return jsonify({'success': True})
 
-
 @app.route('/get_messages')
 def get_messages():
     current_user = session.get('current_user')
@@ -473,7 +482,7 @@ def get_messages():
             m.id, m.text_encrypted, m.submitted_by, m.timestamp, m.visibility, 
             m.file_name, m.is_direct, 
             a.id as access_id, a.user_id, a.status, a.passcode, a.viewed_by_user, 
-            a.rejected_seen, a.expired_seen, a.expires_at
+            a.rejected_seen, a.expired_seen, a.expires_at,a.user_removed
         FROM messages m
         LEFT JOIN access_requests a 
           ON m.id = a.message_id AND a.user_id = ?
@@ -488,35 +497,48 @@ def get_messages():
         (
             msg_id, text_enc, submitted_by, timestamp, visibility,
             file_name, is_direct,
-            req_id, user_id, status, passcode, viewed, rejected_seen, expired_seen, expires_at
+            req_id, user_id, status, passcode, viewed, rejected_seen, expired_seen, expires_at,user_removed
         ) = row
 
-        # 🛑 Skip messages already viewed (Access Granted)
+        # Skip messages already viewed (Access Granted)
         if status == 'approved' and viewed:
-            continue  # Already viewed, remove from list
+            continue
 
-        # 🛑 Skip rejected messages already shown once
-        if status == 'rejected' and rejected_seen:
-            continue  # Access Denied already shown once
+        # Skip rejected or expired messages already shown once
+        if rejected_seen or expired_seen:
+            continue
 
-        # 🛑 Skip expired messages already shown once
-        if expired_seen:
-            continue  # Message not found already shown once
+        # 🛑 Skip requests removed by user
+        if status and user_removed == 1:
+            continue
 
-        # ✅ Auto-decrypt direct messages (for sender or recipient)
-        if is_direct == 1 and (submitted_by == current_user or user_id == current_user):
+        # Get recipients
+        c2 = conn.cursor()
+        c2.execute("""
+            SELECT DISTINCT user_id FROM access_requests WHERE message_id = ?
+        """, (msg_id,))
+        recipient_list = [r[0] for r in c2.fetchall()]
+        c2.close()
+
+        # Flag for private direct messages
+        is_direct_private = (
+            visibility == 'private' and is_direct == 1 and 
+            (submitted_by == current_user or current_user in recipient_list)
+        )
+
+        # Decrypt message for private direct messages
+        decrypted = ""
+        if is_direct_private:
             try:
                 decrypted = cipher.decrypt(text_enc.encode()).decode()
             except:
                 decrypted = "[Decryption Error]"
-
         else:
-            # 🔥 Handle expired approved messages
-            expired = False
+            # Handle other messages
             if status == 'approved' and expires_at:
                 expires_at_dt = datetime.fromisoformat(expires_at)
                 if now > expires_at_dt:
-                    # Mark as expired_seen → remove next time
+                    # Mark expired
                     conn2 = sqlite3.connect('messages.db')
                     c2 = conn2.cursor()
                     c2.execute("UPDATE access_requests SET expired_seen = 1 WHERE id = ?", (req_id,))
@@ -524,12 +546,11 @@ def get_messages():
                     conn2.close()
                     decrypted = "[Message not found or access expired]"
                 else:
-                    # Approved & not expired
                     is_verified = session.get(f'passcode_verified_{msg_id}', False)
                     if is_verified:
                         try:
                             decrypted = cipher.decrypt(text_enc.encode()).decode()
-                            # ✅ Mark as viewed so it disappears next time
+                            # Mark as viewed
                             conn2 = sqlite3.connect('messages.db')
                             c2 = conn2.cursor()
                             c2.execute("UPDATE access_requests SET viewed_by_user = 1 WHERE id = ?", (req_id,))
@@ -539,23 +560,20 @@ def get_messages():
                             decrypted = "[Decryption Error]"
                     else:
                         decrypted = "[Encrypted - Requires Passcode Verification]"
-
             elif status == 'rejected':
-                # Mark as rejected_seen → remove next time
+                # Mark rejected
                 conn2 = sqlite3.connect('messages.db')
                 c2 = conn2.cursor()
                 c2.execute("UPDATE access_requests SET rejected_seen = 1 WHERE id = ?", (req_id,))
                 conn2.commit()
                 conn2.close()
                 decrypted = "[Access Denied by Admin]"
-
             elif status == 'pending':
                 decrypted = "[Encrypted - Pending Approval]"
-
             else:
                 decrypted = "[Encrypted - Request Access Required]" if visibility == 'public' else "[Private Message]"
 
-        # 🔐 Filter private messages: Only sender or recipient can see
+        # Filter private messages for sender/recipient only
         if visibility == 'private' and submitted_by != current_user and user_id != current_user:
             continue
 
@@ -568,11 +586,14 @@ def get_messages():
             'file_name': file_name,
             'access_status': status,
             'is_verified': False,
-            'is_direct': is_direct
+            'is_direct': is_direct,
+            'recipients': ", ".join(recipient_list),
+            'is_direct_private': is_direct_private
         })
 
     conn.close()
     return jsonify(messages)
+
 
 @app.route('/admin/get_messages')
 def admin_get_messages():
@@ -582,11 +603,15 @@ def admin_get_messages():
     conn = sqlite3.connect('messages.db')
     c = conn.cursor()
 
+    # Group recipients for private messages
     c.execute("""
-        SELECT m.id, m.text_encrypted, m.submitted_by, m.timestamp, m.visibility, m.file_name,
-               ar.user_id AS recipient, m.is_direct
+        SELECT 
+            m.id, m.text_encrypted, m.submitted_by, m.timestamp, m.visibility, 
+            m.file_name, m.is_direct,
+            GROUP_CONCAT(ar.user_id) as recipients
         FROM messages m
         LEFT JOIN access_requests ar ON m.id = ar.message_id AND ar.status = 'approved'
+        GROUP BY m.id
         ORDER BY m.timestamp DESC
     """)
 
@@ -595,7 +620,10 @@ def admin_get_messages():
 
     messages = []
     for row in rows:
-        msg_id, encrypted, submitted_by, timestamp, visibility, file_name, recipient, is_direct = row
+        (
+            msg_id, encrypted, submitted_by, timestamp, visibility, 
+            file_name, is_direct, recipients_str
+        ) = row
 
         # 🔒 Show actual message only if public
         if visibility == 'public':
@@ -604,7 +632,14 @@ def admin_get_messages():
             except:
                 decrypted_text = "[Unable to decrypt]"
         else:
-            decrypted_text = None  # Do not show private message content
+            decrypted_text = None  # Hide private message content
+
+        # 🛡️ For private direct messages → hide recipients
+        if visibility == 'private' and is_direct == 1:
+            recipient_display = "🔒 This is a private message. Recipients are hidden."
+        else:
+            # Show recipients (if any)
+            recipient_display = recipients_str if recipients_str else "No recipients"
 
         messages.append({
             'id': msg_id,
@@ -613,7 +648,7 @@ def admin_get_messages():
             'timestamp': timestamp,
             'visibility': visibility,
             'file_name': file_name,
-            'recipient': recipient,
+            'recipient': recipient_display,
             'is_direct': is_direct
         })
 
@@ -841,46 +876,67 @@ def signup():
     return render_template('signup.html')
 
 
-@app.route('/hide_request', methods=['POST'])
-def hide_request():
+@app.route('/remove_user_message/<int:msg_id>', methods=['POST'])
+def remove_user_message(msg_id):
+    current_user = session.get('current_user')
+    if not current_user:
+        return jsonify({'success': False, 'error': 'Not logged in'}), 401
+
+    try:
+        conn = sqlite3.connect('messages.db')
+        c = conn.cursor()
+
+        # Check if there's a record of this user requesting the message
+        c.execute("""
+            SELECT id FROM access_requests
+            WHERE message_id = ? AND user_id = ?
+        """, (msg_id, current_user))
+        row = c.fetchone()
+
+        if row:
+            # Mark this message as removed for this user only
+            c.execute("""
+                UPDATE access_requests
+                SET rejected_seen = 1
+                WHERE message_id = ? AND user_id = ?
+            """, (msg_id, current_user))
+            conn.commit()
+            conn.close()
+            return jsonify({'success': True})
+        else:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Message not found for user'}), 404
+    except Exception as e:
+        print(f"Error in remove_user_message: {e}")
+        return jsonify({'success': False, 'error': 'Server error'}), 500
+
+@app.route('/remove_request', methods=['POST'])
+def remove_request():
     current_user = session.get('current_user')
     data = request.get_json()
     message_id = data.get('message_id')
 
-    if not current_user or not message_id:
-        return jsonify({'success': False})
+    if not current_user:
+        return jsonify({'success': False, 'error': 'Unauthorized'}), 401
 
     conn = sqlite3.connect('messages.db')
     c = conn.cursor()
-    # ✅ Set viewed_by_user = 1 to hide from their list
+
+    # Set user_removed = 1 for this user's request
     c.execute("""
         UPDATE access_requests
-        SET viewed_by_user = 1
-        WHERE user_id = ? AND message_id = ?
-    """, (current_user, message_id))
+        SET user_removed = 1
+        WHERE message_id = ? AND user_id = ?
+    """, (message_id, current_user))
+
     conn.commit()
     conn.close()
 
     return jsonify({'success': True})
 
-@app.route('/remove_from_user_list', methods=['POST'])
-def remove_from_user_list():
-    current_user = session.get('current_user')
-    data = request.get_json()
-    message_id = data.get('message_id')
 
-    if not current_user or not message_id:
-        return jsonify({'success': False})
 
-    conn = sqlite3.connect('messages.db')
-    c = conn.cursor()
-    # Mark as "viewed" to hide from the current user
-    c.execute("""
-        UPDATE access_requests
-        SET viewed_by_user = 1
-        WHERE user_id = ? AND message_id = ?
-    """, (current_user, message_id))
-    conn.commit()
-    conn.close()
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000, debug=True)
 
-    return jsonify({'success': True})
+
